@@ -1,0 +1,204 @@
+﻿@{
+    ViewData["Title"] = "Genetic Algorithm Visualization";
+}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            margin: auto;
+            margin-top: 30px;
+        }
+
+        .pair {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .label {
+            min-width: 120px;
+        }
+
+        .textbox {
+            width: 180px;
+            margin-right: 10px;
+        }
+
+        .button {
+            width: 100px;
+        }
+
+        #plot {
+            margin-top: 40px;
+            width: 600px;
+            height: 450px;
+            margin: auto;
+        }
+
+        #bestFitness {
+            text-align: center;
+            margin-top: 30px;
+        }
+    </style>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <div class="pair">
+            <label class="label">Number 1x1:</label>
+            <input type="number" id="input1x1" class="textbox" value="3"/>
+            <button onclick="Start()">Draw</button>
+        </div>
+
+        <div class="pair">
+            <label class="label">Number 2x2:</label>
+            <input type="number" id="input2x2" class="textbox" value="2"/>
+            <button onclick="Stop()">Stop</button>
+        </div>
+
+        <div class="pair">
+            <label class="label">Number 3x3:</label>
+            <input type="number" id="input3x3" class="textbox" value="1"/>
+        </div>
+    </div>
+
+    <div id="area"></div>
+    <div id="bestFitness"></div>
+    <div id="plot"></div>
+    <script>
+        var workInProgress = false;
+        async function Start()
+        {
+            if (!workInProgress) {
+                workInProgress = true;
+                const json_file = {
+                    "n1x1": document.getElementById("input1x1").value,
+                    "n2x2": document.getElementById("input2x2").value,
+                    "n3x3": document.getElementById("input3x3").value,
+                }
+                await fetch("http://localhost:5134/Start",
+                {
+                    method: "POST",
+                    headers:
+                    {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(json_file),
+                })
+            } 
+        }
+
+        async function Stop()
+        {
+            if (workInProgress)
+            {
+                workInProgress = false;
+                await fetch("http://localhost:5134/Stop",
+                {
+                    method: "POST",
+                    headers:
+                    {
+                        "Content-Type": "application/json",
+                    }
+                })
+            }
+        } 
+        
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/genetichub")
+            .build();
+
+        connection.on("UpdateData", (data) => {
+            if (!workInProgress) return;
+            const logDiv = document.getElementById("plot");
+            const newLog = document.getElementById("bestFitness");
+            drawSquares(data.length_chrom, data.gen, data.sqr_sizes)
+            newLog.textContent = `Current iteration: ${data.current_generation}, Best fitness: ${data.fitness}`;
+            logDiv.appendChild(newLog);
+        });
+
+        connection.on("ResultData", () => {
+            workInProgress = false;
+        });
+
+        connection.start().catch(err => console.error(err));
+
+        function drawSquares(length_ch, idealGen, sq_sizes) {
+            let min_x = Number.MAX_SAFE_INTEGER;
+            let min_y = Number.MAX_SAFE_INTEGER;
+            let max_x = Number.MIN_SAFE_INTEGER;
+            let max_y = Number.MIN_SAFE_INTEGER;
+
+            const Length_chrom = length_ch;
+            const ideal_gen = idealGen;
+            const square_sizes = sq_sizes;
+
+            for (let i = 0; i < Length_chrom; i += 2) {
+                min_x = Math.min(ideal_gen[i], min_x);
+                min_y = Math.min(ideal_gen[i + 1], min_y);
+                max_x = Math.max(ideal_gen[i] + square_sizes[i / 2], max_x);
+                max_y = Math.max(ideal_gen[i + 1] + square_sizes[i / 2], max_y);
+            }
+
+            const squares = [];
+            for (let i = 0; i < Length_chrom; i += 2) {
+                const x = ideal_gen[i];
+                const y = ideal_gen[i + 1];
+                const size = square_sizes[i / 2];
+                let colour;
+
+                if (size === 1) {
+                    colour = 'rgba(144, 238, 160, 1)';
+                } else if (size === 2) {
+                    colour = 'rgba(135, 206, 250, 1)';
+                } else {
+                    colour = 'rgba(232, 165, 238, 1)';
+                }
+
+                squares.push({
+                    type: 'rect',
+                    x0: x - min_x + 1,
+                    y0: y - min_y + 1,
+                    x1: x - min_x + size + 1,
+                    y1: y - min_y + size + 1,
+                    line: {
+                        color: 'rgba(0, 0, 0, 1)',
+                        width: 1
+                    },
+                    fillcolor: colour
+                });
+            }
+
+            squares.push({
+                type: 'rect',
+                x0: 1,
+                y0: 1,
+                x1: max_x - min_x + 1,
+                y1: max_y - min_y + 1,
+                line: {
+                    color: 'rgba(0, 0, 0, 1)'
+                }
+            });
+
+            const layout = {
+                shapes: squares,
+                xaxis: { range: [0, max_x - min_x + 2] },
+                yaxis: { range: [0, max_y - min_y + 2], scaleanchor: "x" }
+            };
+
+            Plotly.newPlot('area', [], layout);
+        }
+    </script>
+</body>
+
+</html>
